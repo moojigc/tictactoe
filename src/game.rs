@@ -9,6 +9,7 @@ enum GameState {
     Running,
     WillExit,
     Won,
+    Tied,
 }
 
 pub struct Game {
@@ -32,90 +33,41 @@ impl Default for Game {
 impl Game {
     pub fn run(&mut self) {
         println!("> Welcome to the game! Enter 'q' to quit.");
+        self.render();
 
         loop {
             match self.state {
                 GameState::WillExit => break,
-                _ => self.update(),
+                GameState::Running => {
+                    self.update();
+                    self.render();
+                }
+                GameState::Won => self.on_win(),
+                GameState::Tied => self.on_tie(),
             }
         }
     }
 
     pub fn update(&mut self) {
-        println!("{}", self.board);
-
-        let player_number = self.move_count % 2 + 1;
-
-        if !self.players.contains_key(&player_number) {
-            let name = Game::ask(format!("Player {}, what's your name?: ", player_number).as_str());
-            self.players.insert(player_number, name.clone());
-        }
-
-        let player_name = self.players.entry(player_number).or_default();
-
-        let next_tile_state = match self.move_count % 2 {
-            0 => board::TileState::Ex,
-            _ => board::TileState::Oh,
-        };
-
-        if self.state == GameState::Won {
-            println!("Yay!!! Player {} wins!!! 🎉🥳", player_name);
-
-            let continue_answer = Game::ask("Play again? (y/n): ");
-
-            match continue_answer.as_str() {
-                "y" => {
-                    self.reset();
-                    return;
-                }
-                _ => {
-                    self.state = GameState::WillExit;
-                    return;
-                }
-            }
-        }
-
+        let player_name = self.get_player(self.player_id());
+        let next_tile_state = self.calc_next_tile_state();
         let input = Game::ask(
             format!(
-                "> Player {} ({})'s turn - enter x and y: ",
+                "Player {} ({})'s turn - enter x and y: ",
                 player_name, next_tile_state
             )
             .as_str(),
         );
 
         match input.as_str() {
-            "q" => return,
-            "exit" => return,
-            "y/n" => {}
-            _ => match input.parse::<play::Play>() {
-                Ok(play) => match self.board.update(play.x, play.y, next_tile_state) {
-                    Ok(_) => {
-                        if self.board.any_row_won() {
-                            self.state = GameState::Won;
-                            return;
-                        }
-
-                        println!("Player {}'s turn!", player_name);
-
-                        self.move_count += 1;
-                    }
-                    Err(e) => match e {
-                        BoardUpdateError::AlreadyOccupied => println!("Can't move there!"),
-                        BoardUpdateError::TileNonExistent => {
-                            println!("Enter x and y coords between 1 and 3!")
-                        }
-                    },
-                },
-                Err(e) => match e {
-                    play::ParsePlayError::BadLen => {
-                        println!("Please enter x and y coords like: 1 2")
-                    }
-                    play::ParsePlayError::ParseInt(e) => {
-                        println!("Can't convert {} to an integer!", e)
-                    }
-                },
-            },
+            "q" => self.state = GameState::WillExit,
+            "exit" => self.state = GameState::WillExit,
+            _ => self.on_move_input(&input),
         }
+    }
+
+    pub fn render(&self) {
+        println!("{}", self.board);
     }
 
     fn reset(&mut self) {
@@ -126,7 +78,7 @@ impl Game {
 
     fn ask(message: &str) -> String {
         if !message.is_empty() {
-            print!("{}", message);
+            print!("> {}", message);
             io::stdout().flush().unwrap();
         }
 
@@ -140,5 +92,92 @@ impl Game {
         };
 
         input.trim().to_string()
+    }
+
+    fn confirm(message: &str) -> bool {
+        let resp = Self::ask(message);
+
+        match resp.as_str() {
+            "y" => true,
+            "yes" => true,
+            _ => false,
+        }
+    }
+
+    fn on_move_input(&mut self, input: &String) {
+        match input.parse::<play::Play>() {
+            Ok(play) => match self
+                .board
+                .update(play.x, play.y, self.calc_next_tile_state())
+            {
+                Ok(_) => {
+                    if self.board.any_row_won() {
+                        self.state = GameState::Won;
+                        return;
+                    }
+
+                    if self.board.full() {
+                        self.state = GameState::Tied;
+                        return;
+                    }
+
+                    self.move_count += 1;
+                }
+                Err(e) => match e {
+                    BoardUpdateError::AlreadyOccupied => println!("Can't move there!"),
+                    BoardUpdateError::TileNonExistent => {
+                        println!("Enter x and y coords between 1 and 3!")
+                    }
+                },
+            },
+            Err(e) => match e {
+                play::ParsePlayError::BadLen => {
+                    println!("Please enter x and y coords like: 1 2")
+                }
+                play::ParsePlayError::ParseInt => {
+                    println!("ENTER A NUMBER PLEASE. '{}' ARE NOT NUMBERS!", input)
+                }
+            },
+        };
+    }
+
+    fn on_win(&mut self) {
+        let player_id = self.get_player(self.player_id());
+
+        self.on_end(format!("Yay!!! Player {} wins!!! 🎉🥳", player_id))
+    }
+
+    fn on_tie(&mut self) {
+        self.on_end("Womp womp womp! No one wins!".into())
+    }
+
+    fn on_end(&mut self, message: String) {
+        println!("{}", message);
+
+        if Self::confirm("Play again? (y/n): ") {
+            self.reset()
+        } else {
+            self.state = GameState::WillExit;
+        }
+    }
+
+    fn get_player(&mut self, player_id: u32) -> String {
+        if !self.players.contains_key(&player_id) {
+            let name = Game::ask(format!("Player {}, what's your name?: ", player_id).as_str());
+            self.players.insert(player_id, name);
+        }
+
+        self.players.entry(player_id).or_default().to_string()
+    }
+
+    fn player_id(&self) -> u32 {
+        self.move_count % 2 + 1
+    }
+
+    fn calc_next_tile_state(&self) -> board::TileState {
+        match self.move_count % 2 {
+            0 => board::TileState::Ex,
+            _ => board::TileState::Oh,
+        }
     }
 }

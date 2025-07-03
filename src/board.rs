@@ -71,6 +71,16 @@ impl Board {
         }
     }
 
+    pub fn full(&self) -> bool {
+        for x in self.tiles {
+            if x.contains(&TileState::Empty) {
+                return false;
+            }
+        }
+
+        true
+    }
+
     pub fn reset(&mut self) {
         self.tiles = [[TileState::Empty; 3]; 3];
     }

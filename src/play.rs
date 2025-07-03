@@ -1,4 +1,3 @@
-use std::num::ParseIntError;
 use std::str::FromStr;
 
 pub struct Play {
@@ -8,7 +7,7 @@ pub struct Play {
 
 pub enum ParsePlayError {
     BadLen,
-    ParseInt(ParseIntError)
+    ParseInt
 }
 
 impl FromStr for Play {
@@ -21,8 +20,8 @@ impl FromStr for Play {
             return Err(ParsePlayError::BadLen);
         };
 
-        let x = x.parse().map_err(ParsePlayError::ParseInt)?;
-        let y = y.parse().map_err(ParsePlayError::ParseInt)?;
+        let x = x.parse().map_err(|_| ParsePlayError::ParseInt)?;
+        let y = y.parse().map_err(|_| ParsePlayError::ParseInt)?;
 
 
         Ok(Self { x, y })
